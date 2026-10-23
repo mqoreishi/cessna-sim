@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cessna Longitudinal Flight Guidance, Cascade P-PI Control & State-Space Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            background-color: #090d16;
+            color: #f1f5f9;
+        }
+        .font-mono-tech {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #1e293b;
+            height: 6px;
+            border-radius: 999px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #3b82f6;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid #f8fafc;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+            transition: transform 0.1s ease, background-color 0.15s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            background: #60a5fa;
+        }
+        input[type="range"]:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        input[type="range"]:disabled::-webkit-slider-thumb {
+            background: #64748b;
+            box-shadow: none;
+        }
+        .math-var {
+            font-family: 'Times New Roman', Times, serif;
+            font-style: italic;
+            font-weight: 600;
+        }
+        .block-card {
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .block-card:hover {
+            border-color: #475569;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Top Header & Simulation Transport Bar -->
+    <header class="bg-slate-900/95 border-b border-slate-800 px-4 lg:px-6 py-3 sticky top-0 z-30 backdrop-blur-md">
+        <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 font-bold text-lg shadow-inner">
+                    ✈
+                </div>
+                <div>
+                    <div class="flex items-center gap-2.5">
+                        <h1 class="text-base md:text-lg font-extrabold tracking-tight text-white">
+                            Longitudinal Flight Guidance &amp; Cascade Autopilot Simulator
+                        </h1>
+                        <span id="sim-status-badge" class="px-2.5 py-0.5 text-[11px] font-mono-tech font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            ● RUNNING
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400">
+                        Cessna-172 Linear State-Space Dynamics • Parabolic Terminal Guidance • Cascade P-PI Control
+                    </p>
+                </div>
+            </div>
+
+            <!-- Mode Selector & Transport Controls -->
+            <div class="flex flex-wrap items-center gap-2">
+                <!-- Mode Switch -->
+                <div class="bg-slate-950 p-1 rounded-xl border border-slate-800 flex items-center">
+                    <button id="btn-mode-manual" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow">
+                        🕹️ Manual Elevator (Open-Loop)
+                    </button>
+                    <button id="btn-mode-auto" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white">
+                        🎯 Guidance + Autopilot (Closed-Loop)
+                    </button>
+                </div>
+
+                <div class="h-6 w-[1px] bg-slate-800 mx-1 hidden sm:block"></div>
+
+                <!-- Sim Speed -->
+                <div class="bg-slate-950 p-1 rounded-xl border border-slate-800 flex items-center text-xs font-mono-tech">
+                    <button data-speed="0.5" class="speed-btn px-2 py-1 rounded-md text-slate-400 hover:text-white">0.5x</button>
+                    <button data-speed="1" class="speed-btn px-2 py-1 rounded-md bg-slate-800 text-sky-400 font-bold">1.0x</button>
+                    <button data-speed="2" class="speed-btn px-2 py-1 rounded-md text-slate-400 hover:text-white">2.0x</button>
+                </div>
+
+                <!-- Play / Pause / Step / Reset -->
+                <button id="btn-play-pause" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow">
+                    ⏸ Pause
+                </button>
+                <button id="btn-step" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all" title="Step forward by 0.05s">
+                    ⏭ Step
+                </button>
+                <button id="btn-reset" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-all shadow">
+                    ↺ Reset
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <main class="flex-1 p-4 lg:p-6 max-w-[1680px] w-full mx-auto flex flex-col gap-5">
+
+        <!-- Interactive Live Simulink Block Diagram Strip -->
+        <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">
+                        Live System Architecture &amp; Signal Flow (Simulink Model Representation)
+                    </h2>
+                </div>
+                <span class="text-[11px] text-slate-400">
+                    Fundamental Relation: <span class="text-sky-300 font-mono-tech">&gamma; = &theta; &minus; &alpha;</span> &nbsp;|&nbsp;
+                    Commanded Pitch: <span class="text-amber-300 font-mono-tech">&theta;<sub>cmd</sub> = &gamma;<sub>cmd</sub> + &alpha;</span>
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-stretch">
+                <!-- Block 1: Guidance -->
+                <div id="block-guidance-ui" class="block-card bg-slate-950/80 border border-blue-500/30 rounded-xl p-3 flex flex-col justify-between relative">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                            <span class="text-xs font-bold text-blue-400">1. Guidance Law (Parabolic)</span>
+                            <span id="badge-guid-active" class="text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">BYPASSED</span>
+                        </div>
+                        <div class="text-[11px] text-slate-300 space-y-1 font-mono-tech">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">h<sub>des</sub>(S) = a&middot;S&sup2; + b&middot;S:</span>
+                                <span id="blk-hdes" class="text-blue-300 font-semibold">550.0 m</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Alt Error (e<sub>h</sub> = h<sub>des</sub> &minus; H):</span>
+                                <span id="blk-eh" class="text-emerald-300">0.0 m</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Ref Slope (&gamma;<sub>ref</sub> = &minus;atan(dh/dS)):</span>
+                                <span id="blk-gammaref" class="text-sky-300">0.0&deg;</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex justify-between items-center text-xs font-mono-tech">
+                        <span class="text-slate-400">Output <span class="text-amber-400 font-bold">&theta;<sub>cmd</sub></span>:</span>
+                        <span id="blk-thetacmd" class="text-amber-300 font-bold text-sm">0.0&deg;</span>
+                    </div>
+                </div>
+
+                <!-- Block 2: Cascade Autopilot -->
+                <div id="block-autopilot-ui" class="block-card bg-slate-950/80 border border-indigo-500/30 rounded-xl p-3 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                            <span class="text-xs font-bold text-indigo-400">2. Cascade Controller (P &rarr; PI)</span>
+                            <span class="text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">Sat: &plusmn;20&deg;</span>
+                        </div>
+                        <div class="text-[11px] text-slate-300 space-y-1 font-mono-tech">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Pitch Err (e<sub>&theta;</sub> = &theta;<sub>cmd</sub> &minus; &theta;):</span>
+                                <span id="blk-etheta" class="text-indigo-300">0.0&deg;</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Outer P &rarr; Rate Cmd (q<sub>cmd</sub>):</span>
+                                <span id="blk-qcmd" class="text-purple-300">0.0 &deg;/s</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Inner PI Rate Err (q<sub>cmd</sub> &minus; q):</span>
+                                <span id="blk-eq" class="text-rose-300">0.0 &deg;/s</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex justify-between items-center text-xs font-mono-tech">
+                        <span class="text-slate-400">Elevator <span class="text-rose-400 font-bold">&delta;<sub>e</sub></span>:</span>
+                        <span id="blk-deltae" class="text-rose-400 font-bold text-sm">0.0&deg; (0.000 rad)</span>
+                    </div>
+                </div>
+
+                <!-- Block 3: State-Space Aircraft Dynamics -->
+                <div class="block-card bg-slate-950/80 border border-emerald-500/30 rounded-xl p-3 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                            <span class="text-xs font-bold text-emerald-400">3. Aircraft State-Space (Roskam)</span>
+                            <span class="text-[10px] font-mono-tech text-slate-400">x&#775; = A&middot;x + B&middot;&delta;<sub>e</sub></span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono-tech">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Pitch (&theta;):</span>
+                                <span id="blk-theta" class="text-amber-300 font-semibold">0.0&deg;</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">AoA (&alpha;):</span>
+                                <span id="blk-alpha" class="text-emerald-300 font-semibold">0.0&deg;</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Rate (q):</span>
+                                <span id="blk-q" class="text-rose-300 font-semibold">0.0 &deg;/s</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Speed (&Delta;u):</span>
+                                <span id="blk-du" class="text-sky-300 font-semibold">0.0 m/s</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex justify-between items-center text-xs font-mono-tech">
+                        <span class="text-slate-400">Flight Path <span class="text-sky-400 font-bold">&gamma; = &theta; &minus; &alpha;</span>:</span>
+                        <span id="blk-gamma" class="text-sky-300 font-bold text-sm">0.0&deg;</span>
+                    </div>
+                </div>
+
+                <!-- Block 4: Kinematic Constraints & Integrators -->
+                <div class="block-card bg-slate-950/80 border border-amber-500/30 rounded-xl p-3 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                            <span class="text-xs font-bold text-amber-400">4. Kinematics &amp; Integrators</span>
+                            <span class="text-[10px] font-mono-tech text-slate-400">&int; dt &rarr; (S, H)</span>
+                        </div>
+                        <div class="text-[11px] text-slate-300 space-y-1 font-mono-tech">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Total Speed (U = U<sub>0</sub> + u):</span>
+                                <span id="blk-utotal" class="text-amber-300">60.0 m/s</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Climb Rate (H&#775; = U&middot;sin &gamma;):</span>
+                                <span id="blk-hdot" class="text-emerald-300">0.0 m/s</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Closing Rate (S&#775; = &minus;U&middot;cos &gamma;):</span>
+                                <span id="blk-sdot" class="text-sky-300">-60.0 m/s</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex justify-between items-center text-xs font-mono-tech">
+                        <span class="text-slate-400">Pos (S, H):</span>
+                        <span id="blk-pos" class="text-white font-bold text-sm">(1500m, 550m)</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Columns: Left = Visualizers, Right = Interactive Controls -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+            <!-- Left 8 Columns: Attitude Canvas & Trajectory Plot -->
+            <div class="lg:col-span-8 flex flex-col gap-5">
+
+                <!-- 1. Aircraft Attitude, Velocity Vector & Angle Arc Visualizer -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col">
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                            <h3 class="text-sm font-bold text-slate-200">
+                                Aircraft Attitude, Velocity Vector (<span class="math-var">V</span>) &amp; Aerodynamic Angles Visualizer
+                            </h3>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3 text-xs font-mono-tech">
+                            <span class="flex items-center gap-1.5 text-amber-300">
+                                <span class="w-3 h-0.5 bg-amber-400 inline-block"></span>Body Axis (&theta;)
+                            </span>
+                            <span class="flex items-center gap-1.5 text-sky-300">
+                                <span class="w-3 h-0.5 bg-sky-400 inline-block"></span>Velocity Vector (&gamma;)
+                            </span>
+                            <span class="flex items-center gap-1.5 text-emerald-300">
+                                <span class="w-3 h-0.5 bg-emerald-400 inline-block"></span>Angle of Attack (&alpha;)
+                            </span>
+                            <span class="flex items-center gap-1.5 text-rose-400">
+                                <span class="w-3 h-1 bg-rose-500 inline-block"></span>Elevator (&delta;<sub>e</sub>)
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- High-DPI Canvas for Attitude & Vector Geometry (Faces Right, matching Left-to-Right flight) -->
+                    <div class="relative w-full h-[270px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <canvas id="attitude-canvas" class="w-full h-full block"></canvas>
+                        <!-- Overlay Telemetry Pill -->
+                        <div class="absolute top-3 left-3 bg-slate-900/85 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs font-mono-tech backdrop-blur-sm space-y-0.5">
+                            <div>Time: <span id="att-time" class="text-white font-bold">0.00 s</span></div>
+                            <div>Convention: <span class="text-emerald-400">&delta;<sub>e</sub> &lt; 0 (Trailing Edge Up) &rarr; Nose Pitch UP (&theta; &gt; 0)</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Spatial Flight Trajectory Canvas (Left-to-Right progression: S = s0 down to 0) -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col flex-1">
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                            <h3 class="text-sm font-bold text-slate-200">
+                                Spatial Flight Trajectory: Altitude <span class="math-var">H</span> vs. Distance to Target <span class="math-var">S</span> (Left-to-Right Flight)
+                            </h3>
+                        </div>
+                        <div class="flex items-center gap-4 text-xs font-mono-tech">
+                            <span class="flex items-center gap-1.5 text-blue-400">
+                                <span class="w-3 h-0.5 border-b-2 border-dashed border-blue-400 inline-block"></span>Desired Parabolic Path (h<sub>des</sub>)
+                            </span>
+                            <span class="flex items-center gap-1.5 text-rose-400">
+                                <span class="w-3 h-1 bg-rose-500 inline-block rounded"></span>Actual Aircraft Path (H)
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="relative w-full h-[320px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <canvas id="trajectory-canvas" class="w-full h-full block"></canvas>
+
+                        <!-- Impact / Termination Banner Overlay -->
+                        <div id="impact-banner" class="hidden absolute top-3 right-3 bg-slate-900/95 border-2 border-emerald-500 rounded-xl px-4 py-2.5 shadow-2xl backdrop-blur-md">
+                            <div id="impact-title" class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">
+                                🎯 TARGET REACHED / GROUND IMPACT
+                            </div>
+                            <div id="impact-details" class="text-xs font-mono-tech text-slate-200 mt-1">
+                                Final Miss Distance: 0.0 m | Impact Angle: -50.0&deg;
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap justify-between items-center text-[11px] text-slate-400 mt-2 px-1 font-mono-tech">
+                        <span>Start on Left: S = s<sub>0</sub> (Aircraft flies Left &rarr; Right so visual pitch &theta; &amp; velocity vector &gamma; match curve slope)</span>
+                        <span>Target on Right: (S = 0 m, H = 0 m)</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right 4 Columns: Interactive Control Panel & Parameter Sliders -->
+            <div class="lg:col-span-4 flex flex-col gap-5">
+
+                <!-- Card 1: Manual Elevator Input Control -->
+                <div id="card-manual-elevator" class="bg-slate-900/90 border-2 border-blue-500/60 rounded-2xl p-4 shadow-xl transition-all">
+                    <div class="flex justify-between items-center mb-2">
+                        <div>
+                            <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
+                                <span>🕹️ Elevator Deflection Input (<span class="math-var">&delta;</span><sub>e</sub>)</span>
+                            </h3>
+                            <p id="elevator-mode-hint" class="text-[11px] text-blue-300">
+                                Manual Open-Loop Mode: Drag slider to deflect elevator
+                            </p>
+                        </div>
+                        <span id="badge-elevator-deg" class="px-2.5 py-1 rounded-lg text-xs font-mono-tech font-bold bg-rose-950 text-rose-300 border border-rose-700">
+                            0.0&deg; (0.00 rad)
+                        </span>
+                    </div>
+
+                    <div class="my-3">
+                        <input id="slider-elevator" type="range" min="-20" max="20" step="0.2" value="0" class="w-full">
+                        <div class="flex justify-between text-[10px] text-slate-400 font-mono-tech mt-1.5">
+                            <span class="text-emerald-400">&minus;20&deg; (Pull Back / Nose UP)</span>
+                            <span>0&deg; Trim</span>
+                            <span class="text-amber-400">+20&deg; (Push Forward / Nose DOWN)</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 mt-2">
+                        <button id="btn-elev-up" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs rounded-lg font-semibold border border-slate-700 transition">
+                            Nose Up (&delta;<sub>e</sub> &minus;3&deg;)
+                        </button>
+                        <button id="btn-elev-trim" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg font-semibold border border-slate-700 transition">
+                            Trim (0&deg;)
+                        </button>
+                        <button id="btn-elev-down" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs rounded-lg font-semibold border border-slate-700 transition">
+                            Nose Down (&delta;<sub>e</sub> +3&deg;)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card 2: Mission & Parabolic Guidance Parameters -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3.5">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <h3 class="text-sm font-bold text-slate-200">
+                            🎯 Mission &amp; Guidance Law Parameters
+                        </h3>
+                        <span class="text-[11px] font-mono-tech text-blue-400">h<sub>des</sub> = a&middot;S&sup2; + b&middot;S</span>
+                    </div>
+
+                    <!-- Initial Distance s0 -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Initial Horizontal Distance (<span class="math-var">s</span><sub>0</sub>):</span>
+                            <span id="lbl-s0" class="font-mono-tech font-bold text-sky-400">1500 m</span>
+                        </div>
+                        <input id="slider-s0" type="range" min="1000" max="2000" step="50" value="1500" class="w-full">
+                    </div>
+
+                    <!-- Initial Altitude h0 -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Initial Altitude (<span class="math-var">h</span><sub>0</sub>):</span>
+                            <span id="lbl-h0" class="font-mono-tech font-bold text-emerald-400">550 m</span>
+                        </div>
+                        <input id="slider-h0" type="range" min="300" max="800" step="25" value="550" class="w-full">
+                    </div>
+
+                    <!-- Desired Terminal Impact Angle theta_f -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Desired Terminal Dive Angle (<span class="math-var">&theta;</span><sub>f</sub>):</span>
+                            <span id="lbl-thetaf" class="font-mono-tech font-bold text-amber-400">50&deg;</span>
+                        </div>
+                        <input id="slider-thetaf" type="range" min="25" max="65" step="1" value="50" class="w-full">
+                    </div>
+
+                    <!-- Guidance Altitude Error Gain kh -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Guidance Altitude Error Gain (<span class="math-var">k<sub>h</sub></span>):</span>
+                            <span id="lbl-kh" class="font-mono-tech font-bold text-blue-400">0.012 rad/m</span>
+                        </div>
+                        <input id="slider-kh" type="range" min="0.002" max="0.040" step="0.001" value="0.012" class="w-full">
+                    </div>
+                </div>
+
+                <!-- Card 3: Cascade Autopilot Gains (P - PI) -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3.5">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <h3 class="text-sm font-bold text-slate-200">
+                            ⚙️ Cascade Autopilot Gains (P &rarr; PI)
+                        </h3>
+                        <button id="btn-default-gains" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+                            Restore Tuned Gains
+                        </button>
+                    </div>
+
+                    <!-- Outer Loop P Gain (K_theta) -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Outer Loop Pitch P-Gain (<span class="math-var">K<sub>p,&theta;</sub></span>):</span>
+                            <span id="lbl-ktheta" class="font-mono-tech font-bold text-indigo-400">2.20</span>
+                        </div>
+                        <input id="slider-ktheta" type="range" min="0.4" max="5.0" step="0.1" value="2.2" class="w-full">
+                    </div>
+
+                    <!-- Inner Loop Pitch Rate P Gain (Kp_q) -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Inner Loop Rate P-Gain (<span class="math-var">K<sub>p,q</sub></span>):</span>
+                            <span id="lbl-kpq" class="font-mono-tech font-bold text-purple-400">1.10</span>
+                        </div>
+                        <input id="slider-kpq" type="range" min="0.1" max="3.0" step="0.05" value="1.1" class="w-full">
+                    </div>
+
+                    <!-- Inner Loop Pitch Rate I Gain (Ki_q) -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Inner Loop Rate I-Gain (<span class="math-var">K<sub>i,q</sub></span>):</span>
+                            <span id="lbl-kiq" class="font-mono-tech font-bold text-rose-400">0.35</span>
+                        </div>
+                        <input id="slider-kiq" type="range" min="0.0" max="1.5" step="0.05" value="0.35" class="w-full">
+                    </div>
+                </div>
+
+                <!-- Card 4: Educational Reference Guide -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <h4 class="font-bold text-white text-xs uppercase tracking-wider border-b border-slate-800 pb-1.5">
+                        How Guidance &amp; State-Space Work Together
+                    </h4>
+                    <p>
+                        <strong class="text-blue-400">1. Guidance Block:</strong> Computes desired altitude <span class="font-mono-tech">h<sub>des</sub>(S)</span> and reference flight-path slope <span class="font-mono-tech">&gamma;<sub>ref</sub> = &minus;atan(2aS + b)</span>. Because the wings need an Angle of Attack (<span class="font-mono-tech">&alpha;</span>) to generate lift, Guidance adds <span class="font-mono-tech">&alpha;</span> to produce the nose pitch command <span class="font-mono-tech">&theta;<sub>cmd</sub> = &gamma;<sub>cmd</sub> + &alpha;</span>.
+                    </p>
+                    <p>
+                        <strong class="text-emerald-400">2. State-Space Dynamics:</strong> Models how elevator deflection <span class="font-mono-tech">&delta;<sub>e</sub></span> creates aerodynamic pitching moment, changing pitch rate <span class="font-mono-tech">q</span>, pitch attitude <span class="font-mono-tech">&theta;</span>, angle of attack <span class="font-mono-tech">&alpha;</span>, and airspeed perturbation <span class="font-mono-tech">u</span>.
+                    </p>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Simulation Physics, Control & High-DPI Canvas Rendering Script -->
+    <script>
+        // ============================================================================
+        // 1. PARAMETERS & STATE INITIALIZATION
+        // ============================================================================
+        const U0 = 60.0; // Nominal cruise trim airspeed (m/s)
+        const DEG2RAD = Math.PI / 180;
+        const RAD2DEG = 180 / Math.PI;
+
+        let params = {
+            s0: 1500.0,
+            h0: 550.0,
+            theta_f_deg: 50.0,
+            kh: 0.012,
+            K_theta: 2.2,
+            Kp_q: 1.1,
+            Ki_q: 0.35,
+            simSpeed: 1.0
+        };
+
+        let state = {
+            t: 0.0,
+            theta: 0.0,       // Pitch attitude (rad)
+            alpha: 0.0,       // Angle of attack (rad)
+            q: 0.0,           // Pitch rate (rad/s)
+            u: 0.0,           // Forward speed perturbation (m/s)
+            S: params.s0,     // Horizontal distance to target (m)
+            H: params.h0,     // Altitude (m)
+            delta_e: 0.0,     // Elevator deflection (rad), negative = trailing edge up = pitch up
+            // Telemetry signals
+            h_des: params.h0,
+            e_h: 0.0,
+            gamma_ref: 0.0,
+            gamma_cmd: 0.0,
+            theta_cmd: 0.0,
+            e_theta: 0.0,
+            q_cmd: 0.0,
+            e_q: 0.0,
+            integral_q: 0.0,
+            H_dot: 0.0,
+            S_dot: -U0,
+            // Simulation control flags
+            mode: 'manual',   // 'manual' or 'auto'
+            running: true,
+            terminated: false,
+            terminationReason: '',
+            history: []
+        };
+
+        // Longitudinal Linear State-Space Matrices (Cessna-172 Cruise Trim)
+        // State vector x = [theta, alpha, q, u]^T, Input u_in = delta_e (rad)
+        // Standard aerodynamic convention: delta_e < 0 (elevator up) -> positive pitching moment (d_q > 0)
+        const A_MAT = [
+            [ 0.0,     0.0,     1.0,     0.0   ], // d(theta)/dt = q
+            [ 0.0,    -2.02,    0.98,   -0.003 ], // d(alpha)/dt
+            [ 0.0,   -14.5,    -3.85,   -0.002 ], // d(q)/dt
+            [-9.81,   -4.2,     0.0,    -0.045 ]  // d(u)/dt
+        ];
+        const B_MAT = [0.0, -0.18, -16.5, 0.0];
+
+        // ============================================================================
+        // 2. DOM ELEMENTS BINDING
+        // ============================================================================
+        const attCanvas = document.getElementById('attitude-canvas');
+        const attCtx = attCanvas.getContext('2d');
+        const trajCanvas = document.getElementById('trajectory-canvas');
+        const trajCtx = trajCanvas.getContext('2d');
+
+        // Header & Mode controls
+        const simStatusBadge = document.getElementById('sim-status-badge');
+        const btnModeManual = document.getElementById('btn-mode-manual');
+        const btnModeAuto = document.getElementById('btn-mode-auto');
+        const btnPlayPause = document.getElementById('btn-play-pause');
+        const btnStep = document.getElementById('btn-step');
+        const btnReset = document.getElementById('btn-reset');
+        const speedBtns = document.querySelectorAll('.speed-btn');
+
+        // Sliders & Badges
+        const sliderElevator = document.getElementById('slider-elevator');
+        const badgeElevatorDeg = document.getElementById('badge-elevator-deg');
+        const cardManualElevator = document.getElementById('card-manual-elevator');
+        const elevatorModeHint = document.getElementById('elevator-mode-hint');
+
+        const sliderS0 = document.getElementById('slider-s0');
+        const sliderH0 = document.getElementById('slider-h0');
+        const sliderThetaF = document.getElementById('slider-thetaf');
+        const sliderKh = document.getElementById('slider-kh');
+        const sliderKtheta = document.getElementById('slider-ktheta');
+        const sliderKpq = document.getElementById('slider-kpq');
+        const sliderKiq = document.getElementById('slider-kiq');
+
+        const lblS0 = document.getElementById('lbl-s0');
+        const lblH0 = document.getElementById('lbl-h0');
+        const lblThetaF = document.getElementById('lbl-thetaf');
+        const lblKh = document.getElementById('lbl-kh');
+        const lblKtheta = document.getElementById('lbl-ktheta');
+        const lblKpq = document.getElementById('lbl-kpq');
+        const lblKiq = document.getElementById('lbl-kiq');
+
+        // Impact Banner
+        const impactBanner = document.getElementById('impact-banner');
+        const impactTitle = document.getElementById('impact-title');
+        const impactDetails = document.getElementById('impact-details');
+
+        // High-DPI Canvas Resize Handler
+        function resizeCanvases() {
+            const dpr = window.devicePixelRatio || 1;
+            [attCanvas, trajCanvas].forEach(c => {
+                const rect = c.parentElement.getBoundingClientRect();
+                c.width = rect.width * dpr;
+                c.height = rect.height * dpr;
+                const ctx = c.getContext('2d');
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            });
+            renderAll();
+        }
+        window.addEventListener('resize', resizeCanvases);
+
+        // ============================================================================
+        // 3. PARABOLIC GUIDANCE & CASCADE AUTOPILOT EQUATIONS
+        // ============================================================================
+        function getParabolicCoeffs() {
+            const theta_f = params.theta_f_deg * DEG2RAD;
+            const b = Math.tan(theta_f);
+            const a = (params.h0 - params.s0 * b) / (params.s0 * params.s0);
+            return { a, b };
+        }
+
+        function evaluateGuidance(H, S, alpha) {
+            const { a, b } = getParabolicCoeffs();
+            const h_des = a * S * S + b * S;
+            const dh_dS = 2 * a * S + b;
+
+            // Since S decreases as the aircraft flies forward (dS/dt = -U cos(gamma)),
+            // geometric trajectory slope dH/dX = -dH/dS, so gamma_ref = -atan(dh_dS)
+            const gamma_ref = -Math.atan(dh_dS);
+            const e_h = h_des - H;
+
+            // Terminal adaptive boost in final 200m for pinpoint landing at (0,0)
+            const effective_kh = (S < 200) ? params.kh * 1.6 : params.kh;
+            let delta_gamma = effective_kh * e_h;
+            delta_gamma = Math.max(Math.min(delta_gamma, 0.55), -0.55);
+
+            const gamma_cmd = gamma_ref + delta_gamma;
+            let theta_cmd = gamma_cmd + alpha;
+            theta_cmd = Math.max(Math.min(theta_cmd, 40 * DEG2RAD), -72 * DEG2RAD);
+
+            return { h_des, e_h, gamma_ref, gamma_cmd, theta_cmd };
+        }
+
+        function evaluateCascadeAutopilot(theta_cmd, dt) {
+            // Outer P Loop: Pitch error -> commanded pitch rate q_cmd
+            const e_theta = theta_cmd - state.theta;
+            let q_cmd = params.K_theta * e_theta;
+            // Pitch rate saturation (+/- 0.45 rad/s ~ 25.8 deg/s)
+            q_cmd = Math.max(Math.min(q_cmd, 0.45), -0.45);
+
+            // Inner PI Loop: Pitch rate error -> elevator deflection
+            // Note: Since B_MAT[2] is negative (-16.5), positive q_cmd requires negative delta_e.
+            // In Simulink diagram, either feedback sign or controller gain sign handles this.
+            // Here we compute control effort u_q and map it with negative sign to physical elevator deflection:
+            const e_q = q_cmd - state.q;
+            state.integral_q += e_q * dt;
+            state.integral_q = Math.max(Math.min(state.integral_q, 0.35), -0.35); // Clamping anti-windup
+
+            const u_q = (params.Kp_q * e_q) + (params.Ki_q * state.integral_q);
+            // Physical elevator saturation: +/- 0.35 rad (+/- 20 deg)
+            let delta_e_cmd = -u_q;
+            delta_e_cmd = Math.max(Math.min(delta_e_cmd, 20 * DEG2RAD), -20 * DEG2RAD);
+
+            return { e_theta, q_cmd, e_q, delta_e_cmd };
+        }
+
+        // ============================================================================
+        // 4. PHYSICS STEP (RK4 / SUB-STEPPED EULER) & IMPACT DETECTION
+        // ============================================================================
+        function stepPhysics(dt_total) {
+            if (state.terminated) return;
+
+            const subSteps = 4;
+            const dt = dt_total / subSteps;
+
+            for (let i = 0; i < subSteps; i++) {
+                // Always compute Guidance telemetry so the user can see h_des and gamma_ref in both modes
+                const guid = evaluateGuidance(state.H, state.S, state.alpha);
+                state.h_des = guid.h_des;
+                state.e_h = guid.e_h;
+                state.gamma_ref = guid.gamma_ref;
+                state.gamma_cmd = guid.gamma_cmd;
+                state.theta_cmd = guid.theta_cmd;
+
+                if (state.mode === 'auto') {
+                    const ctrl = evaluateCascadeAutopilot(state.theta_cmd, dt);
+                    state.e_theta = ctrl.e_theta;
+                    state.q_cmd = ctrl.q_cmd;
+                    state.e_q = ctrl.e_q;
+                    state.delta_e = ctrl.delta_e_cmd;
+                } else {
+                    state.e_theta = state.theta_cmd - state.theta;
+                    state.q_cmd = 0;
+                    state.e_q = 0;
+                }
+
+                // State-space derivatives: dx/dt = A*x + B*delta_e
+                const d_theta = state.q;
+                const d_alpha = (A_MAT[1][1] * state.alpha) + (A_MAT[1][2] * state.q) + (A_MAT[1][3] * state.u) + (B_MAT[1] * state.delta_e);
+                const d_q     = (A_MAT[2][1] * state.alpha) + (A_MAT[2][2] * state.q) + (A_MAT[2][3] * state.u) + (B_MAT[2] * state.delta_e);
+                const d_u     = (A_MAT[3][0] * state.theta) + (A_MAT[3][1] * state.alpha) + (A_MAT[3][3] * state.u) + (B_MAT[3] * state.delta_e);
+
+                state.theta += d_theta * dt;
+                state.alpha += d_alpha * dt;
+                state.q     += d_q * dt;
+                state.u     += d_u * dt;
+
+                // Clamp physical envelopes
+                state.alpha = Math.max(Math.min(state.alpha, 25 * DEG2RAD), -18 * DEG2RAD);
+                state.theta = Math.max(Math.min(state.theta, 85 * DEG2RAD), -85 * DEG2RAD);
+
+                // Kinematic Constraints
+                const gamma = state.theta - state.alpha;
+                const U_total = Math.max(30.0, Math.min(110.0, U0 + state.u));
+
+                state.H_dot = U_total * Math.sin(gamma);
+                state.S_dot = -U_total * Math.cos(gamma);
+
+                const prevH = state.H;
+                const prevS = state.S;
+
+                state.H += state.H_dot * dt;
+                state.S += state.S_dot * dt;
+                state.t += dt;
+
+                // Check Ground Impact (H <= 0) or Target Crossed
+                if (state.H <= 0) {
+                    // Linear interpolation for exact impact point
+                    const frac = prevH / Math.max(1e-6, prevH - state.H);
+                    state.S = prevS + frac * (state.S - prevS);
+                    state.H = 0.0;
+                    state.history.push({ S: state.S, H: state.H });
+                    triggerTermination('GROUND IMPACT (H = 0 m)');
+                    break;
+                }
+
+                // Also stop if aircraft flies too far past the target in manual/auto mode (S <= -150 m)
+                if (state.S <= -150) {
+                    state.history.push({ S: state.S, H: state.H });
+                    triggerTermination('PASSED TARGET BOUNDARY (S = -150 m)');
+                    break;
+                }
+            }
+
+            // Record trajectory point
+            const lastPt = state.history[state.history.length - 1];
+            if (!lastPt || Math.hypot(state.S - lastPt.S, state.H - lastPt.H) > 3.5) {
+                state.history.push({ S: state.S, H: state.H });
+            }
+
+            // Sync elevator slider UI when in Autopilot mode
+            if (state.mode === 'auto') {
+                const deg = state.delta_e * RAD2DEG;
+                sliderElevator.value = deg.toFixed(1);
+                updateElevatorBadge(deg);
+            }
+        }
+
+        function triggerTermination(reason) {
+            state.terminated = true;
+            state.running = false;
+            state.terminationReason = reason;
+
+            const gammaDeg = (state.theta - state.alpha) * RAD2DEG;
+            const missDist = Math.hypot(state.S, state.H);
+
+            impactBanner.classList.remove('hidden');
+            if (missDist < 18.0) {
+                impactBanner.className = "absolute top-3 right-3 bg-slate-900/95 border-2 border-emerald-500 rounded-xl px-4 py-2.5 shadow-2xl backdrop-blur-md";
+                impactTitle.className = "text-xs font-extrabold uppercase tracking-wider text-emerald-400";
+                impactTitle.innerText = `🎯 TARGET HIT! (${reason})`;
+            } else {
+                impactBanner.className = "absolute top-3 right-3 bg-slate-900/95 border-2 border-amber-500 rounded-xl px-4 py-2.5 shadow-2xl backdrop-blur-md";
+                impactTitle.className = "text-xs font-extrabold uppercase tracking-wider text-amber-400";
+                impactTitle.innerText = `⚠️ SIMULATION STOPPED: ${reason}`;
+            }
+
+            impactDetails.innerText = `Final Pos: (S = ${state.S.toFixed(1)} m, H = ${state.H.toFixed(1)} m) | Miss Error: ${missDist.toFixed(1)} m | Flight Path γ: ${gammaDeg.toFixed(1)}°`;
+            updateSimStatusUI();
+        }
+
+        // ============================================================================
+        // 5. RENDERING: ATTITUDE & DYNAMIC VELOCITY VECTOR CANVAS
+        // ============================================================================
+        function drawAttitudeVisualizer() {
+            const w = attCanvas.clientWidth;
+            const h = attCanvas.clientHeight;
+            attCtx.clearRect(0, 0, w, h);
+
+            const cx = w * 0.46;
+            const cy = h * 0.54;
+
+            const theta = state.theta;               // rad
+            const alpha = state.alpha;               // rad
+            const gamma = state.theta - state.alpha; // rad
+            const U_total = Math.max(30, U0 + state.u);
+
+            // 1. Subtle artificial horizon sky/ground gradient background disc
+            const radius = Math.min(w, h) * 0.42;
+            attCtx.save();
+            attCtx.beginPath();
+            attCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+            attCtx.strokeStyle = '#1e293b';
+            attCtx.lineWidth = 1.5;
+            attCtx.stroke();
+
+            // 2. Horizon Reference Line (0 deg) - Aircraft faces RIGHT (+X direction)
+            // Note: In screen coordinates, +X is Right, -Y is Up.
+            // Therefore, a positive angle (counter-clockwise from +X) is -angle in screen canvas rotation!
+            attCtx.beginPath();
+            attCtx.setLineDash([5, 5]);
+            attCtx.moveTo(cx - radius - 30, cy);
+            attCtx.lineTo(cx + radius + 50, cy);
+            attCtx.strokeStyle = '#64748b';
+            attCtx.lineWidth = 1.5;
+            attCtx.stroke();
+            attCtx.setLineDash([]);
+
+            attCtx.fillStyle = '#94a3b8';
+            attCtx.font = '600 11px "JetBrains Mono", monospace';
+            attCtx.fillText('Horizon Reference (0°)', cx - radius - 25, cy - 7);
+
+            // 3. Draw Angle Arcs on the Right (+X side, where the nose and velocity vector point)
+            // Arc for Flight Path Angle (gamma): from 0 to -gamma
+            if (Math.abs(gamma) > 0.008) {
+                const arcR_gamma = 115;
+                attCtx.beginPath();
+                attCtx.arc(cx, cy, arcR_gamma, 0, -gamma, gamma > 0);
+                attCtx.strokeStyle = '#38bdf8';
+                attCtx.lineWidth = 2.5;
+                attCtx.stroke();
+
+                const midGamma = -gamma * 0.5;
+                attCtx.fillStyle = '#38bdf8';
+                attCtx.font = 'bold 11px "JetBrains Mono", monospace';
+                attCtx.fillText(`γ = ${(gamma * RAD2DEG).toFixed(1)}°`, cx + Math.cos(midGamma) * (arcR_gamma + 12), cy + Math.sin(midGamma) * (arcR_gamma + 12));
+            }
+
+            // Arc for Pitch Attitude (theta): from 0 to -theta
+            if (Math.abs(theta) > 0.008) {
+                const arcR_theta = 82;
+                attCtx.beginPath();
+                attCtx.arc(cx, cy, arcR_theta, 0, -theta, theta > 0);
+                attCtx.strokeStyle = '#fbbf24';
+                attCtx.lineWidth = 2;
+                attCtx.stroke();
+
+                const midTheta = -theta * 0.5;
+                attCtx.fillStyle = '#fbbf24';
+                attCtx.font = 'bold 11px "JetBrains Mono", monospace';
+                attCtx.fillText(`θ = ${(theta * RAD2DEG).toFixed(1)}°`, cx + Math.cos(midTheta) * (arcR_theta - 34), cy + Math.sin(midTheta) * (arcR_theta - 34));
+            }
+
+            // Arc for Angle of Attack (alpha = theta - gamma): between -gamma and -theta
+            if (Math.abs(alpha) > 0.008) {
+                const arcR_alpha = 148;
+                attCtx.beginPath();
+                attCtx.arc(cx, cy, arcR_alpha, -gamma, -theta, alpha > 0);
+                attCtx.strokeStyle = '#34d399';
+                attCtx.lineWidth = 2.5;
+                attCtx.stroke();
+
+                const midAlpha = -(gamma + theta) * 0.5;
+                attCtx.fillStyle = '#34d399';
+                attCtx.font = 'bold 11px "JetBrains Mono", monospace';
+                attCtx.fillText(`α = ${(alpha * RAD2DEG).toFixed(1)}°`, cx + Math.cos(midAlpha) * (arcR_alpha + 10), cy + Math.sin(midAlpha) * (arcR_alpha + 10));
+            }
+
+            // 4. Draw Aircraft Body (Rotated by -theta so positive theta pitches the nose UP!)
+            attCtx.save();
+            attCtx.translate(cx, cy);
+            attCtx.rotate(-theta);
+
+            // Body Longitudinal Axis (Chord / Datum Line)
+            attCtx.beginPath();
+            attCtx.setLineDash([4, 4]);
+            attCtx.moveTo(-130, 0);
+            attCtx.lineTo(175, 0);
+            attCtx.strokeStyle = '#fbbf24';
+            attCtx.lineWidth = 1.5;
+            attCtx.stroke();
+            attCtx.setLineDash([]);
+
+            attCtx.fillStyle = '#fbbf24';
+            attCtx.font = '600 11px "Inter", sans-serif';
+            attCtx.fillText('Body Axis (θ)', 125, -8);
+
+            // Cessna Fuselage Silhouette (Facing Right: Nose at +95, Tail at -95)
+            attCtx.fillStyle = '#64748b';
+            attCtx.strokeStyle = '#e2e8f0';
+            attCtx.lineWidth = 1.5;
+            attCtx.beginPath();
+            attCtx.moveTo(-90, -4);
+            attCtx.lineTo(-20, -8);
+            attCtx.lineTo(15, -18); // Cockpit roof
+            attCtx.lineTo(42, -18);
+            attCtx.lineTo(62, -7);  // Windshield down to cowling
+            attCtx.lineTo(95, -4);  // Nose tip top
+            attCtx.lineTo(95, 6);   // Nose tip bottom
+            attCtx.lineTo(50, 9);
+            attCtx.lineTo(-10, 8);
+            attCtx.lineTo(-90, 2);
+            attCtx.closePath();
+            attCtx.fill();
+            attCtx.stroke();
+
+            // Cockpit Window
+            attCtx.fillStyle = 'rgba(56, 189, 248, 0.55)';
+            attCtx.beginPath();
+            attCtx.moveTo(17, -16);
+            attCtx.lineTo(40, -16);
+            attCtx.lineTo(56, -7);
+            attCtx.lineTo(17, -7);
+            attCtx.closePath();
+            attCtx.fill();
+
+            // High Wing Airfoil Cross-Section
+            attCtx.fillStyle = '#94a3b8';
+            attCtx.strokeStyle = '#f8fafc';
+            attCtx.beginPath();
+            attCtx.moveTo(5, -20);
+            attCtx.quadraticCurveTo(25, -27, 48, -19);
+            attCtx.lineTo(5, -18);
+            attCtx.closePath();
+            attCtx.fill();
+            attCtx.stroke();
+
+            // Vertical Stabilizer (Tail Fin)
+            attCtx.fillStyle = '#475569';
+            attCtx.beginPath();
+            attCtx.moveTo(-90, -3);
+            attCtx.lineTo(-106, -34);
+            attCtx.lineTo(-88, -34);
+            attCtx.lineTo(-70, -4);
+            attCtx.closePath();
+            attCtx.fill();
+            attCtx.stroke();
+
+            // Propeller Spinner & Blade Blur
+            attCtx.fillStyle = '#cbd5e1';
+            attCtx.beginPath();
+            attCtx.moveTo(95, -4);
+            attCtx.lineTo(104, 1);
+            attCtx.lineTo(95, 6);
+            attCtx.closePath();
+            attCtx.fill();
+
+            attCtx.strokeStyle = 'rgba(226, 232, 240, 0.65)';
+            attCtx.lineWidth = 2.5;
+            attCtx.beginPath();
+            attCtx.moveTo(100, -24);
+            attCtx.lineTo(100, 26);
+            attCtx.stroke();
+
+            // Horizontal Stabilizer & Dynamic Elevator Flap (at X = -90, Y = -4)
+            attCtx.strokeStyle = '#e2e8f0';
+            attCtx.lineWidth = 3.5;
+            attCtx.beginPath();
+            attCtx.moveTo(-74, -4);
+            attCtx.lineTo(-90, -4);
+            attCtx.stroke();
+
+            // Dynamic Elevator Flap (Rotated by delta_e: negative delta_e deflects trailing edge UP)
+            attCtx.save();
+            attCtx.translate(-90, -4);
+            // When delta_e < 0 (pull back), trailing edge (at X = -22) goes UP (negative Y), which is counter-clockwise (-delta_e)
+            attCtx.rotate(-state.delta_e * 1.4); // Slightly amplified visually for clarity
+            attCtx.strokeStyle = '#f43f5e';
+            attCtx.lineWidth = 4.5;
+            attCtx.lineCap = 'round';
+            attCtx.beginPath();
+            attCtx.moveTo(0, 0);
+            attCtx.lineTo(-22, 0);
+            attCtx.stroke();
+            attCtx.restore();
+
+            attCtx.fillStyle = '#fb7185';
+            attCtx.font = 'bold 11px "JetBrains Mono", monospace';
+            attCtx.fillText(`δe = ${(state.delta_e * RAD2DEG).toFixed(1)}°`, -138, -14);
+
+            attCtx.restore(); // End Aircraft Body Transform
+
+            // 5. Draw Dynamic Velocity Vector V (Rotated by -gamma relative to Horizon!)
+            const vecLen = 135 * (0.75 + 0.25 * (U_total / U0));
+            attCtx.save();
+            attCtx.translate(cx, cy);
+            attCtx.rotate(-gamma);
+
+            // Vector Shaft
+            attCtx.strokeStyle = '#38bdf8';
+            attCtx.lineWidth = 3.2;
+            attCtx.lineCap = 'round';
+            attCtx.beginPath();
+            attCtx.moveTo(0, 0);
+            attCtx.lineTo(vecLen, 0);
+            attCtx.stroke();
+
+            // Vector Arrowhead
+            attCtx.fillStyle = '#38bdf8';
+            attCtx.beginPath();
+            attCtx.moveTo(vecLen + 10, 0);
+            attCtx.lineTo(vecLen - 4, -6);
+            attCtx.lineTo(vecLen - 4, 6);
+            attCtx.closePath();
+            attCtx.fill();
+
+            // Velocity Label
+            attCtx.fillStyle = '#38bdf8';
+            attCtx.font = 'bold 12px "JetBrains Mono", monospace';
+            attCtx.fillText(`Velocity V (${U_total.toFixed(1)} m/s)`, vecLen - 30, 20);
+
+            attCtx.restore();
+
+            // Center of Gravity (CG) Marker
+            attCtx.fillStyle = '#f8fafc';
+            attCtx.beginPath();
+            attCtx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+            attCtx.fill();
+            attCtx.strokeStyle = '#0f172a';
+            attCtx.lineWidth = 1.5;
+            attCtx.stroke();
+
+            attCtx.restore();
+        }
+
+        // ============================================================================
+        // 6. RENDERING: SPATIAL TRAJECTORY PLOT (LEFT-TO-RIGHT: S = s0 down to 0)
+        // ============================================================================
+        function drawTrajectoryPlot() {
+            const w = trajCanvas.clientWidth;
+            const h = trajCanvas.clientHeight;
+            trajCtx.clearRect(0, 0, w, h);
+
+            const padL = 58, padR = 36, padT = 28, padB = 42;
+            const plotW = w - padL - padR;
+            const plotH = h - padT - padB;
+
+            // Left-to-Right X-axis mapping:
+            // Left edge = S_max (s0 + 50), Right edge = S_min (-150)
+            // Because S decreases during flight, plotting S from s0 (Left) to 0 (Right)
+            // means the aircraft moves Left -> Right, and positive pitch/climb angle points UP and RIGHT!
+            const sMax = Math.max(params.s0 + 50, 1550);
+            const sMin = -150;
+
+            const { a, b } = getParabolicCoeffs();
+            // Compute peak of parabola for dynamic Y scaling
+            const sPeak = Math.max(0, Math.min(params.s0, -b / (2 * a)));
+            const hPeak = a * sPeak * sPeak + b * sPeak;
+            const hMax = Math.max(850, hPeak + 120, state.H + 100);
+            const hMin = -60;
+
+            function toX(S) {
+                return padL + ((sMax - S) / (sMax - sMin)) * plotW;
+            }
+            function toY(H) {
+                return padT + plotH - ((H - hMin) / (hMax - hMin)) * plotH;
+            }
+
+            // 1. Grid Lines & Axis Labels
+            trajCtx.strokeStyle = '#1e293b';
+            trajCtx.lineWidth = 1;
+            trajCtx.font = '11px "JetBrains Mono", monospace';
+            trajCtx.fillStyle = '#64748b';
+
+            const sStep = params.s0 > 1600 ? 400 : 250;
+            for (let s = 0; s <= sMax; s += sStep) {
+                const x = toX(s);
+                trajCtx.beginPath();
+                trajCtx.moveTo(x, padT);
+                trajCtx.lineTo(x, padT + plotH);
+                trajCtx.stroke();
+                trajCtx.fillText(`S=${s}m`, x - 22, padT + plotH + 18);
+            }
+
+            const hStep = hMax > 1000 ? 250 : 200;
+            for (let alt = 0; alt <= hMax; alt += hStep) {
+                const y = toY(alt);
+                trajCtx.beginPath();
+                trajCtx.moveTo(padL, y);
+                trajCtx.lineTo(padL + plotW, y);
+                trajCtx.stroke();
+                trajCtx.fillText(`${alt}m`, 10, y + 4);
+            }
+
+            // Axis Titles
+            trajCtx.fillStyle = '#94a3b8';
+            trajCtx.font = '600 11px "Inter", sans-serif';
+            trajCtx.fillText('Distance to Target S (m) [Decreasing Left → Right toward Target S = 0]', padL + plotW * 0.25, h - 6);
+
+            // 2. Ground Level Line (H = 0) & Target Vertical Line (S = 0)
+            trajCtx.strokeStyle = '#334155';
+            trajCtx.lineWidth = 2;
+            trajCtx.beginPath();
+            trajCtx.moveTo(padL, toY(0));
+            trajCtx.lineTo(padL + plotW, toY(0));
+            trajCtx.stroke();
+
+            trajCtx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+            trajCtx.lineWidth = 1.5;
+            trajCtx.beginPath();
+            trajCtx.moveTo(toX(0), padT);
+            trajCtx.lineTo(toX(0), padT + plotH);
+            trajCtx.stroke();
+
+            // 3. Desired Reference Parabolic Trajectory (Blue Dashed)
+            trajCtx.save();
+            trajCtx.strokeStyle = '#3b82f6';
+            trajCtx.lineWidth = 2.5;
+            trajCtx.setLineDash([7, 6]);
+            trajCtx.beginPath();
+            for (let s = params.s0; s >= 0; s -= 10) {
+                const desH = a * s * s + b * s;
+                const px = toX(s);
+                const py = toY(desH);
+                if (s === params.s0) trajCtx.moveTo(px, py);
+                else trajCtx.lineTo(px, py);
+            }
+            trajCtx.stroke();
+            trajCtx.restore();
+
+            // 4. Start Point Square Marker (S = s0, H = h0)
+            const startX = toX(params.s0);
+            const startY = toY(params.h0);
+            trajCtx.fillStyle = '#f8fafc';
+            trajCtx.fillRect(startX - 5, startY - 5, 10, 10);
+            trajCtx.fillStyle = '#cbd5e1';
+            trajCtx.font = 'bold 11px "JetBrains Mono", monospace';
+            trajCtx.fillText('Start', startX - 14, startY - 10);
+
+            // 5. Target Bullseye Marker at (S = 0, H = 0)
+            const targetX = toX(0);
+            const targetY = toY(0);
+            trajCtx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+            trajCtx.beginPath();
+            trajCtx.arc(targetX, targetY, 12, 0, Math.PI * 2);
+            trajCtx.fill();
+
+            trajCtx.fillStyle = '#ef4444';
+            trajCtx.beginPath();
+            trajCtx.arc(targetX, targetY, 6, 0, Math.PI * 2);
+            trajCtx.fill();
+            trajCtx.fillStyle = '#fca5a5';
+            trajCtx.fillText(`Target (0,0) θf=${params.theta_f_deg}°`, targetX - 55, targetY + 26);
+
+            // 6. Actual Aircraft Flight Path (Solid Rose-Red Curve)
+            if (state.history.length > 1) {
+                trajCtx.strokeStyle = '#f43f5e';
+                trajCtx.lineWidth = 3;
+                trajCtx.lineJoin = 'round';
+                trajCtx.beginPath();
+                trajCtx.moveTo(toX(state.history[0].S), toY(state.history[0].H));
+                for (let i = 1; i < state.history.length; i++) {
+                    trajCtx.lineTo(toX(state.history[i].S), toY(state.history[i].H));
+                }
+                trajCtx.stroke();
+            }
+
+            // 7. Live Aircraft Icon on Trajectory (Oriented by geometric pitch angle!)
+            const acX = toX(state.S);
+            const acY = toY(state.H);
+
+            // Compute visual screen angle matching the scaled plot aspect ratio for the velocity vector
+            const scaleX = plotW / (sMax - sMin);
+            const scaleY = plotH / (hMax - hMin);
+            const gamma = state.theta - state.alpha;
+            const visualGamma = Math.atan2(Math.sin(gamma) * scaleY, Math.cos(gamma) * scaleX);
+            const visualTheta = Math.atan2(Math.sin(state.theta) * scaleY, Math.cos(state.theta) * scaleX);
+
+            // Draw mini velocity vector on trajectory
+            trajCtx.save();
+            trajCtx.translate(acX, acY);
+            trajCtx.rotate(-visualGamma);
+            trajCtx.strokeStyle = '#38bdf8';
+            trajCtx.lineWidth = 2;
+            trajCtx.beginPath();
+            trajCtx.moveTo(0, 0);
+            trajCtx.lineTo(28, 0);
+            trajCtx.stroke();
+            trajCtx.restore();
+
+            // Draw mini aircraft delta marker oriented with visualTheta
+            trajCtx.save();
+            trajCtx.translate(acX, acY);
+            trajCtx.rotate(-visualTheta);
+            trajCtx.fillStyle = '#fbbf24';
+            trajCtx.strokeStyle = '#0f172a';
+            trajCtx.lineWidth = 1.5;
+            trajCtx.beginPath();
+            trajCtx.moveTo(12, 0);   // Nose pointing Right (+X)
+            trajCtx.lineTo(-9, -6);
+            trajCtx.lineTo(-6, 0);
+            trajCtx.lineTo(-9, 6);
+            trajCtx.closePath();
+            trajCtx.fill();
+            trajCtx.stroke();
+            trajCtx.restore();
+        }
+
+        // ============================================================================
+        // 7. TELEMETRY & UI UPDATES
+        // ============================================================================
+        function updateTelemetryNumbers() {
+            document.getElementById('att-time').innerText = `${state.t.toFixed(2)} s`;
+
+            // Block 1: Guidance
+            document.getElementById('blk-hdes').innerText = `${state.h_des.toFixed(1)} m`;
+            document.getElementById('blk-eh').innerText = `${state.e_h >= 0 ? '+' : ''}${state.e_h.toFixed(1)} m`;
+            document.getElementById('blk-gammaref').innerText = `${(state.gamma_ref * RAD2DEG).toFixed(1)}°`;
+            document.getElementById('blk-thetacmd').innerText = `${(state.theta_cmd * RAD2DEG).toFixed(1)}°`;
+
+            // Block 2: Autopilot
+            document.getElementById('blk-etheta').innerText = state.mode === 'auto' ? `${(state.e_theta * RAD2DEG).toFixed(1)}°` : 'MANUAL';
+            document.getElementById('blk-qcmd').innerText = state.mode === 'auto' ? `${(state.q_cmd * RAD2DEG).toFixed(1)} °/s` : '---';
+            document.getElementById('blk-eq').innerText = state.mode === 'auto' ? `${(state.e_q * RAD2DEG).toFixed(1)} °/s` : '---';
+            document.getElementById('blk-deltae').innerText = `${(state.delta_e * RAD2DEG).toFixed(1)}° (${state.delta_e.toFixed(3)} rad)`;
+
+            // Block 3: State-Space
+            document.getElementById('blk-theta').innerText = `${(state.theta * RAD2DEG).toFixed(1)}°`;
+            document.getElementById('blk-alpha').innerText = `${(state.alpha * RAD2DEG).toFixed(1)}°`;
+            document.getElementById('blk-q').innerText = `${(state.q * RAD2DEG).toFixed(1)} °/s`;
+            document.getElementById('blk-du').innerText = `${state.u >= 0 ? '+' : ''}${state.u.toFixed(1)} m/s`;
+            document.getElementById('blk-gamma').innerText = `${((state.theta - state.alpha) * RAD2DEG).toFixed(1)}°`;
+
+            // Block 4: Kinematics
+            const U_total = Math.max(30, U0 + state.u);
+            document.getElementById('blk-utotal').innerText = `${U_total.toFixed(1)} m/s`;
+            document.getElementById('blk-hdot').innerText = `${state.H_dot >= 0 ? '+' : ''}${state.H_dot.toFixed(1)} m/s`;
+            document.getElementById('blk-sdot').innerText = `${state.S_dot.toFixed(1)} m/s`;
+            document.getElementById('blk-pos').innerText = `(${state.S.toFixed(0)}m, ${state.H.toFixed(0)}m)`;
+        }
+
+        function updateElevatorBadge(deg) {
+            const rad = deg * DEG2RAD;
+            badgeElevatorDeg.innerText = `${deg >= 0 ? '+' : ''}${deg.toFixed(1)}° (${rad.toFixed(2)} rad)`;
+        }
+
+        function updateSimStatusUI() {
+            if (state.terminated) {
+                simStatusBadge.className = "px-2.5 py-0.5 text-[11px] font-mono-tech font-semibold rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40";
+                simStatusBadge.innerText = "■ IMPACT / STOPPED";
+                btnPlayPause.innerText = "▶ Restart";
+                btnPlayPause.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow";
+            } else if (state.running) {
+                simStatusBadge.className = "px-2.5 py-0.5 text-[11px] font-mono-tech font-semibold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                simStatusBadge.innerText = "● RUNNING";
+                btnPlayPause.innerText = "⏸ Pause";
+                btnPlayPause.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow";
+            } else {
+                simStatusBadge.className = "px-2.5 py-0.5 text-[11px] font-mono-tech font-semibold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                simStatusBadge.innerText = "⏸ PAUSED";
+                btnPlayPause.innerText = "▶ Resume";
+                btnPlayPause.className = "px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow";
+            }
+        }
+
+        function setMode(newMode) {
+            state.mode = newMode;
+            const guidBadge = document.getElementById('badge-guid-active');
+            if (newMode === 'manual') {
+                btnModeManual.className = "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-blue-600 text-white shadow";
+                btnModeAuto.className = "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white";
+                sliderElevator.disabled = false;
+                document.getElementById('btn-elev-up').disabled = false;
+                document.getElementById('btn-elev-trim').disabled = false;
+                document.getElementById('btn-elev-down').disabled = false;
+                cardManualElevator.className = "bg-slate-900/90 border-2 border-blue-500/60 rounded-2xl p-4 shadow-xl transition-all";
+                elevatorModeHint.innerText = "Manual Open-Loop Mode: Drag slider to deflect elevator";
+                elevatorModeHint.className = "text-[11px] text-blue-300";
+                guidBadge.innerText = "MONITOR ONLY";
+                guidBadge.className = "text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-slate-800 text-slate-400";
+            } else {
+                btnModeAuto.className = "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-indigo-600 text-white shadow";
+                btnModeManual.className = "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white";
+                sliderElevator.disabled = true;
+                document.getElementById('btn-elev-up').disabled = true;
+                document.getElementById('btn-elev-trim').disabled = true;
+                document.getElementById('btn-elev-down').disabled = true;
+                cardManualElevator.className = "bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl transition-all opacity-80";
+                elevatorModeHint.innerText = "Driven automatically by Cascade P-PI Autopilot";
+                elevatorModeHint.className = "text-[11px] text-indigo-300";
+                guidBadge.innerText = "ACTIVE CLOSED-LOOP";
+                guidBadge.className = "text-[10px] font-mono-tech px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700";
+            }
+            renderAll();
+        }
+
+        function resetSimulation() {
+            state.t = 0.0;
+            state.theta = 0.0;
+            state.alpha = 0.0;
+            state.q = 0.0;
+            state.u = 0.0;
+            state.S = params.s0;
+            state.H = params.h0;
+            state.delta_e = 0.0;
+            state.integral_q = 0.0;
+            state.H_dot = 0.0;
+            state.S_dot = -U0;
+            state.terminated = false;
+            state.running = true;
+            state.history = [{ S: params.s0, H: params.h0 }];
+
+            sliderElevator.value = 0;
+            updateElevatorBadge(0);
+            impactBanner.classList.add('hidden');
+
+            const guid = evaluateGuidance(state.H, state.S, state.alpha);
+            state.h_des = guid.h_des;
+            state.e_h = guid.e_h;
+            state.gamma_ref = guid.gamma_ref;
+            state.theta_cmd = guid.theta_cmd;
+
+            updateSimStatusUI();
+            renderAll();
+        }
+
+        function renderAll() {
+            updateTelemetryNumbers();
+            drawAttitudeVisualizer();
+            drawTrajectoryPlot();
+        }
+
+        // ============================================================================
+        // 8. EVENT LISTENERS
+        // ============================================================================
+        btnModeManual.addEventListener('click', () => setMode('manual'));
+        btnModeAuto.addEventListener('click', () => setMode('auto'));
+
+        btnPlayPause.addEventListener('click', () => {
+            if (state.terminated) {
+                resetSimulation();
+            } else {
+                state.running = !state.running;
+                updateSimStatusUI();
+            }
+        });
+
+        btnStep.addEventListener('click', () => {
+            if (state.terminated) return;
+            state.running = false;
+            stepPhysics(0.05);
+            updateSimStatusUI();
+            renderAll();
+        });
+
+        btnReset.addEventListener('click', resetSimulation);
+
+        speedBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                params.simSpeed = parseFloat(btn.getAttribute('data-speed'));
+                speedBtns.forEach(b => b.className = "speed-btn px-2 py-1 rounded-md text-slate-400 hover:text-white");
+                btn.className = "speed-btn px-2 py-1 rounded-md bg-slate-800 text-sky-400 font-bold";
+            });
+        });
+
+        // Manual Elevator Controls
+        sliderElevator.addEventListener('input', (e) => {
+            if (state.mode === 'manual') {
+                const deg = parseFloat(e.target.value);
+                state.delta_e = deg * DEG2RAD;
+                updateElevatorBadge(deg);
+                renderAll();
+            }
+        });
+
+        document.getElementById('btn-elev-up').addEventListener('click', () => {
+            if (state.mode === 'manual') {
+                const deg = Math.max(-20, (state.delta_e * RAD2DEG) - 3);
+                state.delta_e = deg * DEG2RAD;
+                sliderElevator.value = deg;
+                updateElevatorBadge(deg);
+                renderAll();
+            }
+        });
+
+        document.getElementById('btn-elev-down').addEventListener('click', () => {
+            if (state.mode === 'manual') {
+                const deg = Math.min(20, (state.delta_e * RAD2DEG) + 3);
+                state.delta_e = deg * DEG2RAD;
+                sliderElevator.value = deg;
+                updateElevatorBadge(deg);
+                renderAll();
+            }
+        });
+
+        document.getElementById('btn-elev-trim').addEventListener('click', () => {
+            if (state.mode === 'manual') {
+                state.delta_e = 0;
+                sliderElevator.value = 0;
+                updateElevatorBadge(0);
+                renderAll();
+            }
+        });
+
+        // Mission & Guidance Parameter Sliders
+        sliderS0.addEventListener('input', (e) => {
+            params.s0 = parseFloat(e.target.value);
+            lblS0.innerText = `${params.s0} m`;
+            resetSimulation();
+        });
+
+        sliderH0.addEventListener('input', (e) => {
+            params.h0 = parseFloat(e.target.value);
+            lblH0.innerText = `${params.h0} m`;
+            resetSimulation();
+        });
+
+        sliderThetaF.addEventListener('input', (e) => {
+            params.theta_f_deg = parseFloat(e.target.value);
+            lblThetaF.innerText = `${params.theta_f_deg}°`;
+            renderAll();
+        });
+
+        sliderKh.addEventListener('input', (e) => {
+            params.kh = parseFloat(e.target.value);
+            lblKh.innerText = `${params.kh.toFixed(3)} rad/m`;
+        });
+
+        // Autopilot Gain Sliders
+        sliderKtheta.addEventListener('input', (e) => {
+            params.K_theta = parseFloat(e.target.value);
+            lblKtheta.innerText = params.K_theta.toFixed(2);
+        });
+
+        sliderKpq.addEventListener('input', (e) => {
+            params.Kp_q = parseFloat(e.target.value);
+            lblKpq.innerText = params.Kp_q.toFixed(2);
+        });
+
+        sliderKiq.addEventListener('input', (e) => {
+            params.Ki_q = parseFloat(e.target.value);
+            lblKiq.innerText = params.Ki_q.toFixed(2);
+        });
+
+        document.getElementById('btn-default-gains').addEventListener('click', () => {
+            params.kh = 0.012;
+            params.K_theta = 2.2;
+            params.Kp_q = 1.1;
+            params.Ki_q = 0.35;
+            sliderKh.value = params.kh;
+            sliderKtheta.value = params.K_theta;
+            sliderKpq.value = params.Kp_q;
+            sliderKiq.value = params.Ki_q;
+            lblKh.innerText = `${params.kh.toFixed(3)} rad/m`;
+            lblKtheta.innerText = params.K_theta.toFixed(2);
+            lblKpq.innerText = params.Kp_q.toFixed(2);
+            lblKiq.innerText = params.Ki_q.toFixed(2);
+        });
+
+        // ============================================================================
+        // 9. MAIN ANIMATION LOOP
+        // ============================================================================
+        let lastFrameTime = performance.now();
+        function animate(now) {
+            const rawDt = Math.min((now - lastFrameTime) / 1000, 0.05);
+            lastFrameTime = now;
+
+            if (state.running && !state.terminated) {
+                stepPhysics(rawDt * params.simSpeed);
+                renderAll();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        window.onload = () => {
+            resizeCanvases();
+            resetSimulation();
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+</html>
